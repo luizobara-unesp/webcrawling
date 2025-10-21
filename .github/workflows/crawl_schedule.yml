@@ -1,0 +1,44 @@
+name: Unesp Sorocaba Page Crawler
+
+on:
+  workflow_dispatch: 
+  schedule:
+    - cron: '0 9 * * 1'
+
+jobs:
+  crawl_job:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11' 
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Google Chrome and ChromeDriver
+        run: |
+          sudo apt-get update
+          wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+          sudo apt install -y ./google-chrome-stable_current_amd64.deb
+          rm google-chrome-stable_current_amd64.deb
+          CHROME_DRIVER_VERSION=$(curl -sS https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_STABLE)
+          wget -q https://storage.googleapis.com/chrome-for-testing-public/${CHROME_DRIVER_VERSION}/linux64/chromedriver-linux64.zip
+          unzip chromedriver-linux64.zip
+          sudo mv chromedriver-linux64/chromedriver /usr/local/bin/chromedriver
+          rm chromedriver-linux64.zip
+          rm -rf chromedriver-linux64
+          google-chrome --version
+          chromedriver --version
+
+      - name: Run Crawler Script
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python src/crawl.py # 

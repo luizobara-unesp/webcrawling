@@ -1,0 +1,50 @@
+name: Unesp Sorocaba Scraper Schedule
+
+on:
+  workflow_dispatch: 
+  schedule:
+    - cron: '0 12,19 * * *'
+
+jobs:
+  scrape_job:
+    runs-on: ubuntu-latest 
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4 
+
+      - name: Set up Python
+        uses: actions/setup-python@v5 
+        with:
+          python-version: '3.11' 
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Google Chrome and ChromeDriver
+        run: |
+          sudo apt-get update
+          # Instala o Chrome estável
+          wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+          sudo apt install -y ./google-chrome-stable_current_amd64.deb
+          rm google-chrome-stable_current_amd64.deb
+          # Baixa o ChromeDriver correspondente (verifique a versão se necessário)
+          # Alternativamente, pode usar 'apt install chromium-chromedriver' se a versão for compatível
+          # Este método baixa a versão mais recente compatível com o Chrome Stable instalado
+          CHROME_DRIVER_VERSION=$(curl -sS https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_STABLE)
+          wget -q https://storage.googleapis.com/chrome-for-testing-public/${CHROME_DRIVER_VERSION}/linux64/chromedriver-linux64.zip
+          unzip chromedriver-linux64.zip
+          # Move o chromedriver para um local no PATH
+          sudo mv chromedriver-linux64/chromedriver /usr/local/bin/chromedriver
+          rm chromedriver-linux64.zip
+          rm -rf chromedriver-linux64
+          # Verifica as versões (opcional, bom para debug)
+          google-chrome --version
+          chromedriver --version
+
+      - name: Run Main Scraper Script
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python src/main.py

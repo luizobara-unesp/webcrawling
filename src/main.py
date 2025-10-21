@@ -1,3 +1,4 @@
+import os
 import time
 from datetime import datetime, timezone
 from selenium import webdriver
@@ -20,11 +21,29 @@ def setup_driver():
     chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--disable-gpu")
+
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+
     chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
-    service = Service(executable_path=DRIVER_PATH)
-    driver = webdriver.Chrome(service=service, options=chrome_options)
-    print("Driver setup complete.")
-    return driver
+
+    driver_path_local = os.environ.get('LOCAL_DRIVER_PATH') 
+    
+    try:
+        if driver_path_local:
+             print(f"Using local driver path: {driver_path_local}")
+             service = Service(executable_path=driver_path_local)
+             driver = webdriver.Chrome(service=service, options=chrome_options)
+        else:
+             print("Using ChromeDriver from PATH (expected in GitHub Actions).")
+             driver = webdriver.Chrome(options=chrome_options) 
+        
+        print("Driver setup complete.")
+        return driver
+    except Exception as e:
+        print(f"!!! Error initializing WebDriver: {e}")
+        print("!!! Ensure ChromeDriver is installed and accessible in PATH (Actions) or via LOCAL_DRIVER_PATH (Local).")
+        return None
 
 def load_pages_from_db():
     """
