@@ -1,5 +1,4 @@
 import time
-import csv  # Importa a biblioteca CSV
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -7,6 +6,10 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, StaleElementReferenceException
+
+from db import engine
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy import table, column
 
 DRIVER_PATH = r'C:\Users\USER\projects\webcrawling\drivers\chromedriver.exe'
 
@@ -25,27 +28,26 @@ def setup_driver():
 
 def generate_id_from_url(url_path):
     """
-    Gera um ID a partir do path da URL.
-    Ex: 'sobre-o-campus/administracao/' -> 'administracao'
+    Gera um ID único a partir do path da URL, substituindo '/' por '_'.
+    Ex: 'sobre-o-campus/administracao/' -> 'sobre-o-campus_administracao'
     """
     try:
-        parts = url_path.strip("/").split("/")
-        if parts:
-            # Pega o último item que não seja vazio
-            last_part = next((part for part in reversed(parts) if part), None)
-            return last_part if last_part else "homepage"
-        return "homepage"
+        clean_path = url_path.strip("/").replace("/", "_")
+        
+        if not clean_path:
+            return "homepage"
+            
+        return clean_path
     except Exception:
-        return "unknown"
+        return "unknown_" + str(int(time.time()))
 
 def crawl_site(start_url):
     """
     Varre o site a partir da URL inicial em busca de todas as sub-páginas
-    que usam o padrão '#!/'.
+    que usam o padrão '#!/'. Retorna uma lista de dicts.
     """
     driver = setup_driver()
     wait = WebDriverWait(driver, 5) 
-    
     base_url = "https://www.sorocaba.unesp.br/"
     
     visited_urls = set() 
@@ -65,8 +67,6 @@ def crawl_site(start_url):
             print(f"Visiting: {current_url}")
             driver.get(current_url)
             
-            # --- CORREÇÃO AQUI ---
-            # Espera pelo rodapé, que deve existir em todas as páginas
             wait.until(EC.presence_of_element_located((By.ID, "idCorpoRodape")))
             
             if current_url != start_url:
@@ -102,28 +102,43 @@ def crawl_site(start_url):
     driver.quit()
     return final_pages
 
-def save_pages_to_csv(pages, filename="pages_to_scrape.csv"):
-    """Salva a lista de páginas encontradas em um arquivo CSV."""
-    if not pages:
-        print("No pages found to save.")
+def upsert_pages_to_db(pages_list):
+    """
+    Salva a lista de páginas no banco de dados (tabela 'pages').
+    Usa 'ON CONFLICT' (UPSERT) para inserir novas páginas ou
+    atualizar a data 'last_crawled_at' de páginas existentes.
+    """
+    if not pages_list:
+        print("No pages found to upsert.")
+        return
+        
+    if not engine:
+        print("Database engine not initialized. Exiting.")
         return
 
-    print(f"\nSaving {len(pages)} pages to {filename}...")
-    
-    # 'fieldnames' são os cabeçalhos das colunas
-    fieldnames = ['id', 'url']
-    
-    # 'w' = write (sobrescrever), newline='' é padrão para CSV
-    with open(filename, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader() # Escreve a linha de cabeçalho (id, url)
-        writer.writerows(pages) # Escreve todos os dados
-        
-    print(f"Successfully saved to {filename}")
+    print(f"\nUpserting {len(pages_list)} pages to database...")
 
-# --- Bloco de Execução Principal ---
-if __name__ == "__main__":
+    pages_table = table("pages",
+        column("id"),
+        column("url"),
+        column("last_crawled_at")
+    )
+
+    stmt = pg_insert(pages_table).values(pages_list)
+
+    stmt = stmt.on_conflict_do_update(
+        index_elements=['id'], 
+        set_={'last_crawled_at': "NOW()"} 
+    )
     
+    try:
+        with engine.begin() as conn:
+            conn.execute(stmt)
+        print(f"Successfully upserted {len(pages_list)} pages.")
+    except Exception as e:
+        print(f"Error upserting pages to database: {e}")
+
+if __name__ == "__main__":
     root_url = "https://www.sorocaba.unesp.br/#!/"
     
     print("Starting site crawl...")
@@ -131,5 +146,4 @@ if __name__ == "__main__":
     
     print("\n--- CRAWL COMPLETE ---")
     
-    # Salva os resultados no CSV
-    save_pages_to_csv(all_pages)
+    upsert_pages_to_db(all_pages)
