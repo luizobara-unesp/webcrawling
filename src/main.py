@@ -12,10 +12,13 @@ DRIVER_PATH = r'C:\Users\USER\projects\webcrawling\drivers\chromedriver.exe'
 
 def setup_driver():
     """Inicializa e retorna uma instância do Selenium WebDriver."""
-    print("Setting up Chrome driver...")
+    print("Setting up Chrome driver (headless mode)...")
     chrome_options = Options()
     
-    chrome_options.add_argument("--start-maximized")
+    chrome_options.add_argument("--headless=new") 
+    
+    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--disable-gpu")
     
     service = Service(executable_path=DRIVER_PATH)
     driver = webdriver.Chrome(service=service, options=chrome_options)
