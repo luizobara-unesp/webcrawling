@@ -3,7 +3,7 @@ name: Unesp Sorocaba Scraper Schedule
 on:
   workflow_dispatch: 
   schedule:
-    - cron: '0 12,19 * * *'
+    - cron: '0 12 * * *'
 
 jobs:
   scrape_job:
