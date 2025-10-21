@@ -1,3 +1,4 @@
+import os
 import time
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -11,20 +12,36 @@ from db import engine
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy import table, column
 
-DRIVER_PATH = r'C:\Users\USER\projects\webcrawling\drivers\chromedriver.exe'
+# DRIVER_PATH = r'C:\Users\USER\projects\webcrawling\drivers\chromedriver.exe'
 
 def setup_driver():
-    """Inicializa o WebDriver em modo headless (sem janela)."""
+    """Inicializa e retorna uma instância do Selenium WebDriver."""
     print("Setting up Chrome driver (headless mode)...")
     chrome_options = Options()
     chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
+
+    driver_path_local = os.environ.get('LOCAL_DRIVER_PATH') 
     
-    service = Service(executable_path=DRIVER_PATH)
-    driver = webdriver.Chrome(service=service, options=chrome_options)
-    print("Driver setup complete.")
-    return driver
+    try:
+        if driver_path_local:
+             print(f"Using local driver path: {driver_path_local}")
+             service = Service(executable_path=driver_path_local)
+             driver = webdriver.Chrome(service=service, options=chrome_options)
+        else:
+             print("Using ChromeDriver from PATH (expected in GitHub Actions).")
+             driver = webdriver.Chrome(options=chrome_options) 
+        
+        print("Driver setup complete.")
+        return driver
+    except Exception as e:
+        print(f"!!! Error initializing WebDriver: {e}")
+        print("!!! Ensure ChromeDriver is installed and accessible in PATH (Actions) or via LOCAL_DRIVER_PATH (Local).")
+        return None
 
 def generate_id_from_url(url_path):
     """
