@@ -1,0 +1,45 @@
+version: 2
+
+sources:
+  - name: raw_scrape_data
+    description: Tabelas brutas carregadas pelos scripts Python de scraping.
+    schema: public 
+    tables:
+      - name: pages
+        description: Tabela mestre das páginas a serem monitoradas.
+        columns:
+          - name: id
+            description: ID único da página (gerado a partir da URL). Chave primária.
+            tests:
+              - unique
+              - not_null
+          - name: url
+            description: URL completa da página.
+            tests:
+              - not_null
+          - name: is_active
+            description: Flag indicando se a página deve ser raspada.
+          - name: last_crawled_at
+            description: Timestamp da última vez que o crawler verificou/adicionou esta página.
+
+      - name: scrape_history
+        description: Histórico de cada execução do scraper para cada página.
+        columns:
+          - name: id
+            description: ID sequencial do registro de histórico. Chave primária.
+          - name: page_id
+            description: Chave estrangeira referenciando pages.id.
+            tests:
+              - not_null
+          - name: scrape_timestamp
+            description: Timestamp exato da execução do scrape.
+            tests:
+              - not_null
+          - name: modified_date
+            description: Data de modificação extraída da página (como texto).
+          - name: updated_by
+            description: Usuário que modificou a página (como texto).
+          - name: responsible
+            description: Responsável pela página (como texto).
+          - name: full_modified_text
+            description: Texto completo da informação de modificação.
