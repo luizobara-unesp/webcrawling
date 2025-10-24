@@ -81,15 +81,15 @@ graph TD
     L -- Dados Limpos --> M; 
 
     %% === 4. Define Styles ===
-    style A fill:#f9f,stroke:#333,stroke-width:1px
-    style C fill:#f9f,stroke:#333,stroke-width:1px
-    style G fill:#ccf,stroke:#333,stroke-width:1px
-    style H fill:#9cf,stroke:#333,stroke-width:1px
-    style I fill:#9cf,stroke:#333,stroke-width:1px
-    style J fill:#9cf,stroke:#333,stroke-width:1px
-    style K fill:#FFCC99,stroke:#333,stroke-width:1px
-    style L fill:#FFCC99,stroke:#333,stroke-width:1px
-    style M fill:#99FF99,stroke:#333,stroke-width:1px
+    style A fill:#f9f,stroke:#333,stroke-width:1px, color: white
+    style C fill:#f9f,stroke:#333,stroke-width:1px, color: white
+    style G fill:#ccf,stroke:#333,stroke-width:1px, color: white
+    style H fill:#9cf,stroke:#333,stroke-width:1px, color: white
+    style I fill:#9cf,stroke:#333,stroke-width:1px, color: white
+    style J fill:#9cf,stroke:#333,stroke-width:1px, color: white
+    style K fill:#FFCC99,stroke:#333,stroke-width:1px, color: white
+    style L fill:#FFCC99,stroke:#333,stroke-width:1px, color: white
+    style M fill:#99FF99,stroke:#333,stroke-width:1px, color: white
 ```
 
 ## Como Clonar
