@@ -8,58 +8,79 @@ Este projeto realiza o _crawling_ e _scraping_ do site da Unesp de Sorocaba (`ht
 
 ```mermaid
 graph TD
-    %% Define Nodes
-    A[crawl_schedule.yml];
-    B(Executa src/crawl.py);
-    C[scrape_schedule.yml];
-    D(Executa src/main.py);
-    E{src/db.py};
-    F[Selenium/WebDriver];
-    G([UNESP Website]);
-    H[(Database)];
-    I(Tabela: pages);
-    J(Tabela: scrape_history);
-    K(dbt run);
-    L["Views Analíticas (ex vw_latest)"];
-    M{Ferramenta BI};
+    %% === Define um Subgrafo Principal para agrupar tudo ===
+    subgraph "Monitoramento UNESP"
+        direction TB
 
-    subgraph "Workflow"
-        A; C;
+        %% === 1. Define Nodes ===
+        A[crawl_schedule.yml];
+        B(Executa src/crawl.py);
+        C[scrape_schedule.yml];
+        D(Executa src/main.py);
+        E{src/db.py};
+        F[Selenium/WebDriver];
+        G([UNESP Website]);
+        H[(Database)];
+        I(Tabela: pages);
+        J(Tabela: scrape_history);
+        K(dbt run);
+        L["Views Analíticas (ex vw_latest)"];
+        M{Ferramenta BI};
 
-        B; D; E; F;
+        %% === 2. Define Subgraphs Internos ===
+        subgraph sg_Agendamento ["Agendamento (GitHub Actions)"]
+            direction LR
+            A; C;
+        end
 
-        G;
+        subgraph sg_ExtracaoCarga ["Extração & Carga (Python / Selenium)"]
+            direction TB
+            B; D; E; F;
+        end
 
-        H; I; J;
+        subgraph sg_Externo ["Interações Externas"]
+             G;
+        end
 
-        K; L;
+        subgraph sg_Armazenamento ["Armazenamento (PostgreSQL)"]
+            direction TB
+            H; I; J;
+        end
 
-        M;
-    end
+        subgraph sg_Transformacao ["Transformação (dbt)"]
+            direction TB
+            K; L;
+        end
 
-    %% Define Links
-    A --> B;
+        subgraph sg_Consumo ["Consumo"]
+            direction TB
+            M;
+        end
+    end 
+
+    %% === 3. Define Links ===
+    A --> B;    
     C --> D;
-    B --> E;
-    B --> F;
+    B --> E;    
     D --> E;
+    B --> F;
     D --> F;
-    F --> G;
+    F --> G;    
     G --> F;
-    E --> H;
-    H --> I;
+    E --> H;    
+    H --> I;    
     H --> J;
-    B -- Descobre URLs --> I;
-    D -- Lê URLs Ativas de --> I;
-    F -- Passa URLs para --> B;
-    F -- Passa Dados Mod. para --> D;
-    B -- UPSERT --> I;
-    D -- INSERT --> J;
-    H -- Dados Brutos --> K;
-    K -- Cria/Atualiza --> L;
-    L -- Dados Limpos --> M;
+    B -- Descobre URLs --> I; 
+    D -- Lê URLs Ativas de --> I; 
+    F -- Passa URLs para --> B; 
+    F -- Passa Dados Mod. para --> D; 
+    B -- UPSERT --> I; 
+    D -- INSERT --> J; 
+    H -- Dados Brutos --> K; 
+    K -- Cria/Atualiza --> L; 
+    L -- Dados Limpos --> M; 
 
-    %% Define Styles
+    %% === 4. Define Styles ===
     style A fill:#f9f,stroke:#333,stroke-width:1px
     style C fill:#f9f,stroke:#333,stroke-width:1px
     style G fill:#ccf,stroke:#333,stroke-width:1px
