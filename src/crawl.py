@@ -17,7 +17,6 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy import table, column
 
 DEFAULT_WAIT_TIME = 5
-PAGE_LOAD_SELECTOR = (By.ID, "idCorpoRodape")
 DB_UPSERT_BATCH_SIZE = 1000
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -115,15 +114,17 @@ def crawl_site(start_url):
             logging.info(f"Visiting: {current_url}")
             driver.get(current_url)
             
-            wait.until(EC.presence_of_element_located(PAGE_LOAD_SELECTOR))
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, link_selector)))
             
-            if current_url != start_url:
-                try:
-                    url_path = current_url.split("#!/")[1]
+            try:
+                url_path = current_url.split("#!/")[1]
+                
+                if url_path:
                     page_id = generate_id_from_url(url_path)
                     final_pages.append({"id": page_id, "url": current_url})
-                except IndexError:
-                    logging.warning(f"  -> Skipping URL with invalid format: {current_url}")
+                
+            except IndexError:
+                pass
 
             links = driver.find_elements(By.CSS_SELECTOR, link_selector)
 
@@ -136,13 +137,13 @@ def crawl_site(start_url):
                 href = href.rstrip("/") 
                 
                 if href not in visited_urls and href not in pages_to_visit:
-                    logging.info(f"  -> Found new page: {href}")
+                    logging.info(f"  -> Found new page: {href}")
                     pages_to_visit.append(href)
 
         except (TimeoutException, StaleElementReferenceException) as e:
-            logging.warning(f"  -> Error loading page {current_url}: {e.__class__.__name__}")
+            logging.warning(f"  -> Error loading page {current_url}: {e.__class__.__name__}")
         except Exception as e:
-            logging.error(f"  -> Unexpected error on {current_url}: {e}", exc_info=True)
+            logging.error(f"  -> Unexpected error on {current_url}: {e}", exc_info=True)
             
     driver.quit()
     return final_pages
