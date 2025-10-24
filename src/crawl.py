@@ -1,5 +1,8 @@
-import os
-import time
+import logging
+from datetime import datetime
+from collections import deque
+from urllib.parse import urlparse
+
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -7,16 +10,25 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, StaleElementReferenceException
+from webdriver_manager.chrome import ChromeDriverManager
 
 from db import engine
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy import table, column
 
-# DRIVER_PATH = r'C:\Users\USER\projects\webcrawling\drivers\chromedriver.exe'
+DEFAULT_WAIT_TIME = 5
+PAGE_LOAD_SELECTOR = (By.ID, "idCorpoRodape")
+DB_UPSERT_BATCH_SIZE = 1000
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 
 def setup_driver():
-    """Inicializa e retorna uma instância do Selenium WebDriver."""
-    print("Setting up Chrome driver (headless mode)...")
+    """
+    Inicializa e retorna uma instância do Selenium WebDriver.
+    Usa webdriver-manager para baixar e gerenciar o chromedriver automaticamente.
+    """
+    logging.info("Setting up Chrome driver (headless mode) using webdriver-manager...")
     chrome_options = Options()
     chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--window-size=1920,1080")
@@ -25,28 +37,27 @@ def setup_driver():
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
 
-    driver_path_local = os.environ.get('LOCAL_DRIVER_PATH') 
-    
     try:
-        if driver_path_local:
-             print(f"Using local driver path: {driver_path_local}")
-             service = Service(executable_path=driver_path_local)
-             driver = webdriver.Chrome(service=service, options=chrome_options)
-        else:
-             print("Using ChromeDriver from PATH (expected in GitHub Actions).")
-             driver = webdriver.Chrome(options=chrome_options) 
-        
-        print("Driver setup complete.")
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+        logging.info("Driver setup complete.")
         return driver
     except Exception as e:
-        print(f"!!! Error initializing WebDriver: {e}")
-        print("!!! Ensure ChromeDriver is installed and accessible in PATH (Actions) or via LOCAL_DRIVER_PATH (Local).")
+        logging.error(f"!!! Error initializing WebDriver: {e}", exc_info=True)
+        logging.error("!!! Ensure Chrome is installed.")
         return None
 
 def generate_id_from_url(url_path):
     """
     Gera um ID único a partir do path da URL, substituindo '/' por '_'.
+    
     Ex: 'sobre-o-campus/administracao/' -> 'sobre-o-campus_administracao'
+    
+    Args:
+        url_path (str): O caminho da URL (a parte após o '#!/').
+
+    Returns:
+        str: Um ID formatado.
     """
     try:
         clean_path = url_path.strip("/").replace("/", "_")
@@ -55,24 +66,44 @@ def generate_id_from_url(url_path):
             return "homepage"
             
         return clean_path
-    except Exception:
-        return "unknown_" + str(int(time.time()))
+    except Exception as e:
+        logging.warning(f"Error generating ID for path '{url_path}': {e}", exc_info=True)
+        return "unknown_" + str(int(datetime.now().timestamp()))
 
 def crawl_site(start_url):
     """
     Varre o site a partir da URL inicial em busca de todas as sub-páginas
     que usam o padrão '#!/'. Retorna uma lista de dicts.
+    
+    Usa um algoritmo de Busca em Largura (BFS) para navegar.
+
+    Args:
+        start_url (str): A URL raiz para iniciar o crawling (ex: "https://site.com/#!/").
+
+    Returns:
+        list: Uma lista de dicionários, onde cada dict contém {"id": str, "url": str}.
     """
     driver = setup_driver()
-    wait = WebDriverWait(driver, 5) 
-    base_url = "https://www.sorocaba.unesp.br/"
+    if not driver:
+        logging.error("Driver not initialized. Crawl aborted.")
+        return []
+        
+    wait = WebDriverWait(driver, DEFAULT_WAIT_TIME)
     
-    visited_urls = set() 
-    pages_to_visit = [start_url]
+    try:
+        parsed_start_url = urlparse(start_url)
+        base_url = f"{parsed_start_url.scheme}://{parsed_start_url.netloc}"
+        link_selector = f"a[href^='{base_url}/#!/']"
+    except Exception as e:
+        logging.error(f"Invalid start_url '{start_url}': {e}", exc_info=True)
+        return []
+
+    visited_urls = set()
+    pages_to_visit = deque([start_url])
     final_pages = []
 
     while pages_to_visit:
-        current_url = pages_to_visit.pop(0) 
+        current_url = pages_to_visit.popleft()
         current_url = current_url.rstrip("/")
         
         if current_url in visited_urls:
@@ -81,10 +112,10 @@ def crawl_site(start_url):
         visited_urls.add(current_url)
         
         try:
-            print(f"Visiting: {current_url}")
+            logging.info(f"Visiting: {current_url}")
             driver.get(current_url)
             
-            wait.until(EC.presence_of_element_located((By.ID, "idCorpoRodape")))
+            wait.until(EC.presence_of_element_located(PAGE_LOAD_SELECTOR))
             
             if current_url != start_url:
                 try:
@@ -92,9 +123,9 @@ def crawl_site(start_url):
                     page_id = generate_id_from_url(url_path)
                     final_pages.append({"id": page_id, "url": current_url})
                 except IndexError:
-                    print(f"  -> Skipping URL with invalid format: {current_url}")
+                    logging.warning(f"  -> Skipping URL with invalid format: {current_url}")
 
-            links = driver.find_elements(By.TAG_NAME, "a")
+            links = driver.find_elements(By.CSS_SELECTOR, link_selector)
 
             for link in links:
                 href = link.get_attribute("href")
@@ -104,63 +135,81 @@ def crawl_site(start_url):
                 
                 href = href.rstrip("/") 
                 
-                if (href.startswith(base_url + "#!/") and 
-                    href not in visited_urls and 
-                    href not in pages_to_visit):
-                    
-                    print(f"  -> Found new page: {href}")
+                if href not in visited_urls and href not in pages_to_visit:
+                    logging.info(f"  -> Found new page: {href}")
                     pages_to_visit.append(href)
 
         except (TimeoutException, StaleElementReferenceException) as e:
-            print(f"  -> Error loading page {current_url}: {e.__class__.__name__}")
+            logging.warning(f"  -> Error loading page {current_url}: {e.__class__.__name__}")
         except Exception as e:
-            print(f"  -> Unexpected error on {current_url}: {e}")
+            logging.error(f"  -> Unexpected error on {current_url}: {e}", exc_info=True)
             
     driver.quit()
     return final_pages
 
 def upsert_pages_to_db(pages_list):
     """
-    Salva a lista de páginas no banco de dados (tabela 'pages').
-    Usa 'ON CONFLICT' (UPSERT) para inserir novas páginas ou
-    atualizar a data 'last_crawled_at' de páginas existentes.
+    Salva a lista de páginas no banco de dados (tabela 'pages') em lotes.
+    
+    Usa 'ON CONFLICT' (UPSERT):
+    - Insere novas páginas.
+    - Atualiza 'last_crawled_at' de páginas existentes.
     """
     if not pages_list:
-        print("No pages found to upsert.")
+        logging.info("No pages found to upsert.")
         return
         
     if not engine:
-        print("Database engine not initialized. Exiting.")
+        logging.error("Database engine not initialized. Exiting.")
         return
 
-    print(f"\nUpserting {len(pages_list)} pages to database...")
+    logging.info(f"Preparing to upsert {len(pages_list)} pages to database...")
 
     pages_table = table("pages",
         column("id"),
         column("url"),
         column("last_crawled_at")
     )
-
-    stmt = pg_insert(pages_table).values(pages_list)
-
-    stmt = stmt.on_conflict_do_update(
-        index_elements=['id'], 
-        set_={'last_crawled_at': "NOW()"} 
-    )
     
-    try:
-        with engine.begin() as conn:
-            conn.execute(stmt)
-        print(f"Successfully upserted {len(pages_list)} pages.")
-    except Exception as e:
-        print(f"Error upserting pages to database: {e}")
+    now_timestamp = datetime.utcnow()
+    data_to_upsert = [
+        {"id": p["id"], "url": p["url"], "last_crawled_at": now_timestamp}
+        for p in pages_list
+    ]
+
+    total_processed = 0
+    
+    for i in range(0, len(data_to_upsert), DB_UPSERT_BATCH_SIZE):
+        batch = data_to_upsert[i : i + DB_UPSERT_BATCH_SIZE]
+        batch_num = (i // DB_UPSERT_BATCH_SIZE) + 1
+        logging.info(f"Upserting batch {batch_num} ({len(batch)} pages)...")
+        
+        try:
+            stmt = pg_insert(pages_table).values(batch)
+            
+            stmt = stmt.on_conflict_do_update(
+                index_elements=['id'],
+                set_={'last_crawled_at': stmt.excluded.last_crawled_at}
+            )
+            
+            with engine.begin() as conn:
+                conn.execute(stmt)
+                
+            total_processed += len(batch)
+
+        except Exception as e:
+            logging.error(f"Error upserting batch {batch_num} to database: {e}", exc_info=True)
+
+    logging.info(f"Successfully upserted/updated {total_processed} of {len(pages_list)} pages.")
 
 if __name__ == "__main__":
     root_url = "https://www.sorocaba.unesp.br/#!/"
     
-    print("Starting site crawl...")
+    logging.info("--- Starting site crawl ---")
     all_pages = crawl_site(root_url)
     
-    print("\n--- CRAWL COMPLETE ---")
+    logging.info(f"\n--- CRAWL COMPLETE: Found {len(all_pages)} pages ---")
     
     upsert_pages_to_db(all_pages)
+    
+    logging.info("--- Process Finished ---")
