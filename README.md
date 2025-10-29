@@ -150,7 +150,7 @@ pip install -r requirements.txt
 
 <br>
 
-5. Configuração das Variáveis de Ambiente: Este projeto utiliza variáveis de ambiente para configurações essenciais, como a conexão com o banco de dados. Gerenciamos isso através de um arquivo `.env` na raiz do projeto.
+5. **Configuração das Variáveis de Ambiente**: Este projeto utiliza variáveis de ambiente para configurações essenciais, como a conexão com o banco de dados. Gerenciamos isso através de um arquivo `.env` na raiz do projeto.
 
     - **Crie o arquivo `.env`:**
     Copie o arquivo de exemplo `.env.example` para criar seu arquivo `.env` local:
