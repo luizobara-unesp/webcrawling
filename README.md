@@ -145,6 +145,19 @@ pip install -r requirements.txt
 
 4. **Configure o ChromeDriver**: Baixe o [ChromeDriver](https://googlechromelabs.github.io/chrome-for-testing/) compatível com sua versão do Google Chrome, coloque-o na pasta `drivers` do projeto e configure a variável de ambiente `LOCAL_DRIVER_PATH` conforme a seção Variáveis de Ambiente.
 
+5. **Configure o banco de dados**:
+```bash
+DATABASE_URL="postgresql://<user>:<password>@<host>:<port>/<database>"
+
+DB_TYPE="postgres"
+DB_HOST="<your_database_host_address>"
+DB_PORT="5432"
+DB_USER="<your_database_user>"
+DB_PASSWORD="<your_database_password>"
+DB_NAME="<your_database_name>"
+DB_SCHEMA="public"
+```
+
 ## Modo de Uso
 
 O projeto possui dois scripts principais que devem ser executados em ordem:
