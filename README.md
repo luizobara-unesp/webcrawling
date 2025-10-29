@@ -122,6 +122,7 @@ Siga os passos abaixo para configurar o ambiente de desenvolvimento:
 ```bash
 python -m venv .venv
 ```
+<br>
 
 2. Ative o ambiente virtual:
 
@@ -136,27 +137,44 @@ python -m venv .venv
 ```bash
 source .venv/bin/activate
 ```
+<br>
 
 3. Instale as dependências:
 
 ```bash
 pip install -r requirements.txt
 ```
+<br>
 
-4. **Configure o ChromeDriver**: Baixe o [ChromeDriver](https://googlechromelabs.github.io/chrome-for-testing/) compatível com sua versão do Google Chrome, coloque-o na pasta `drivers` do projeto e configure a variável de ambiente `LOCAL_DRIVER_PATH` conforme a seção Variáveis de Ambiente.
+4. **Configure o ChromeDriver**: Baixe o [ChromeDriver](https://googlechromelabs.github.io/chrome-for-testing/) compatível com sua versão do Google Chrome, coloque-o na pasta `drivers` do projeto.
 
-5. **Configure o banco de dados**:
-```bash
-DATABASE_URL="postgresql://<user>:<password>@<host>:<port>/<database>"
+<br>
 
-DB_TYPE="postgres"
-DB_HOST="<your_database_host_address>"
-DB_PORT="5432"
-DB_USER="<your_database_user>"
-DB_PASSWORD="<your_database_password>"
-DB_NAME="<your_database_name>"
-DB_SCHEMA="public"
-```
+5. Configuração das Variáveis de Ambiente: Este projeto utiliza variáveis de ambiente para configurações essenciais, como a conexão com o banco de dados. Gerenciamos isso através de um arquivo `.env` na raiz do projeto.
+
+    - **Crie o arquivo `.env`:**
+    Copie o arquivo de exemplo `.env.example` para criar seu arquivo `.env` local:
+        ```bash
+        cp .env.example .env
+        ```
+
+    -  **Edite o arquivo `.env`:**
+        Abra o arquivo `.env` recém-criado com seu terminal e substitua os valores de placeholder (`<...>`) pelas suas configurações reais de desenvolvimento.
+
+        * **Conexão com Banco de Dados:** O script utiliza as variáveis `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD` e `DB_NAME` (carregadas via `python-dotenv`, no arquivo `db.py`) para se conectar ao PostgreSQL.
+
+        *Exemplo de conteúdo para o arquivo `.env`:*
+
+        ```dotenv
+        DATABASE_URL="postgresql://seu_usuario_dev:sua_senha_dev@localhost:5432/seu_banco_dev"
+
+        DB_HOST="localhost"                 
+        DB_PORT="5432"                     
+        DB_USER="seu_usuario_dev"          
+        DB_PASSWORD="sua_senha_dev"        
+        DB_NAME="seu_banco_dev"            
+        DB_SCHEMA="public"                
+        ```
 
 ## Modo de Uso
 
@@ -203,15 +221,3 @@ webcrawling/
 - `drivers/`: Pasta para armazenar o executável do WebDriver (ex: `chromedriver.exe`).
 
 - `data/`: Diretório usado para salvar arquivos de dados, como o histórico de scraping em formato `.csv`.
-
-## Variáveis de Ambiente
-
-Para que o projeto funcione, crie um arquivo `.env` na raiz do projeto (baseado no `.env.example`) e defina as seguintes variáveis:
-
-`DATABASE_URL`: A URL de conexão para o banco de dados PostgreSQL.
-
-Formato: `postgres://<usuario>:<senha>@<host>:<porta>/<nome_do_banco>`
-
-`LOCAL_DRIVER_PATH`: O caminho absoluto para o executável do `chromedriver` em seu sistema local.
-
-Exemplo: `C:\Users\USER\projects\webcrawling\drivers\chromedriver.exe`
