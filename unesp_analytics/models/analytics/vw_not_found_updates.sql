@@ -1,4 +1,4 @@
-{{ config(materialized='view') }}
+{{ config(materialized='view', schema='analytics') }}
 
 SELECT *
 FROM {{ ref('vw_page_current_status') }} 
