@@ -8,3 +8,5 @@ __pycache__
 logs/
 
 airflow/config/airflow.cfg
+
+docker-compose.dev.yaml
