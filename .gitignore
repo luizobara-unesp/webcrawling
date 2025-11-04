@@ -6,3 +6,5 @@
 __pycache__
 
 logs/
+
+airflow/config/airflow.cfg
