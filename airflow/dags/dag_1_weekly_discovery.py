@@ -6,7 +6,7 @@ import pendulum
     dag_id="unesp_weekly_discovery",
     description="Runs the crawler 1x per week to discover new pages.",
     schedule="0 0 * * 0", 
-    start_date=pendulum.datetime(2025, 11, 8, tz="America/Sao_Paulo"), 
+    start_date=pendulum.datetime(2025, 11, 2, tz="America/Sao_Paulo"), 
     catchup=False
 )
 def weekly_discovery_pipeline():

@@ -10,4 +10,4 @@ RUN apt-get update && apt-get install -y wget gnupg \
 
 USER airflow
 
-RUN pip install --no-cache-dir dbt-postgres selenium
+RUN pip install --no-cache-dir dbt-postgres selenium webdriver-manager
