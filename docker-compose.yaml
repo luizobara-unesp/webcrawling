@@ -107,6 +107,18 @@ services:
       start_period: 5s
     restart: always
 
+  metabase:
+    image: metabase/metabase:latest
+    container_name: metabase
+    restart: always
+    ports:
+      - "3000:3000"
+    volumes:
+      - metabase-data:/metabase-data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   redis:
     # Redis is limited to 7.2-bookworm due to licencing change
     # https://redis.io/blog/redis-adopts-dual-source-available-licensing/
@@ -339,3 +351,4 @@ services:
 
 volumes:
   postgres-db-volume:
+  metabase-data:
