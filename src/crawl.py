@@ -114,6 +114,11 @@ def crawl_site(start_url):
         if current_url_clean in visited_urls:
             continue
 
+        is_url_blocked = any(pattern in current_url_clean for pattern in BLOCK_PATTERNS)
+        if is_url_blocked:
+            logging.debug(f"Skipping blocked URL: {current_url_clean}")
+            continue
+
         visited_urls.add(current_url_clean)
         page_count += 1
         
