@@ -2,222 +2,225 @@
 
 ## Descrição
 
-Este projeto realiza o _crawling_ e _scraping_ do site da Unesp de Sorocaba (`https://www.sorocaba.unesp.br/`) para monitorar as atualizações de conteúdo. O robô primeiro varre o site para descobrir todas as páginas e as salva em um banco de dados. Em seguida, ele visita cada página para extrair informações sobre a data da última modificação e o usuário responsável, armazenando um histórico dessas alterações.
+Este projeto é uma pipeline de dados ELT (Extract, Load, Transform) completa, projetada para monitorar a obsolescência de conteúdo (+1000 páginas) do portal da Unesp Sorocaba.
+A solução é totalmente containerizada com Docker e orquestrada com Apache Airflow.
 
-### Diagrama do Fluxo (Mermaid):
+## O fluxo de dados opera da seguinte forma:
+
+1. Extract & Load (Extração e Carga):
+    - Uma DAG do Airflow (dag_1_weekly_discovery) executa um script Python (src/crawl.py) semanalmente para descobrir novas páginas (via Selenium) e realizar o UPSERT na tabela pages (Staging Area).
+    - Uma segunda DAG (dag_2_daily_collection) executa um script (src/main.py) diariamente para raspar os metadados de modificação de todas as páginas ativas, inserindo os resultados em scrape_history.
+
+2. Transform (Transformação):
+    - Após a coleta diária, a mesma DAG dispara o dbt (dbt run).
+    - O dbt lê os dados brutos da Staging Area (schema public) e os transforma em um Data Warehouse limpo e modelado (Star Schema) no schema analytics.
+
+3. Consumption (Consumo):
+    - O Metabase, também rodando via Docker, conecta-se diretamente ao Data Warehouse (schema analytics) para visualização de dados, permitindo a criação de dashboards interativos para identificar páginas obsoletas e seus responsáveis.
+
+    
+### Arquitetura da Pipeline (Mermaid):
 
 ```mermaid
 graph TD
-    %% === Define um Subgrafo Principal para agrupar tudo ===
-    subgraph "Monitoramento UNESP"
-        direction TB
-
-        %% === 1. Define Nodes ===
-        A[crawl_schedule.yml];
-        B(Executa src/crawl.py);
-        C[scrape_schedule.yml];
-        D(Executa src/main.py);
-        E{src/db.py};
-        F[Selenium/WebDriver];
-        G([UNESP Website]);
-        H[(Database)];
-        I(Tabela: pages);
-        J(Tabela: scrape_history);
-        K(dbt run);
-        L["Views Analíticas (ex vw_latest)"];
-        M{Ferramenta BI};
-
-        %% === 2. Define Subgraphs Internos ===
-        subgraph sg_Agendamento ["Agendamento (GitHub Actions)"]
-            direction LR
-            A; C;
-        end
-
-        subgraph sg_ExtracaoCarga ["Extração & Carga (Python / Selenium)"]
+    subgraph "Ambiente Containerizado (Docker Compose)"
+        direction LR
+        subgraph "Orquestração - Apache Airflow"
             direction TB
-            B; D; E; F;
+            scheduler[Scheduler - Agendador]
+            worker[Worker - Executor Celery]
+            redis[Redis - Fila de Tarefas]
+            
+            scheduler -- "Agenda DAG 1 (Semanal)" --> worker
+            scheduler -- "Agenda DAG 2 (Diária)" --> worker
+            worker -- "Reporta Status" --> redis
+            scheduler -- "Lê Status" --> redis
         end
 
-        subgraph sg_Externo ["Interações Externas"]
-             G;
+        subgraph "Extração - Selenium"
+            B[src/crawl.py]
+            D[src/main.py]
         end
 
-        subgraph sg_Armazenamento ["Armazenamento (PostgreSQL)"]
+        subgraph "Armazenamento - PostgreSQL"
             direction TB
-            H; I; J;
+            H[(Banco de Dados)]
+            subgraph "Staging - Raw"
+                I(Tabela: pages)
+                J(Tabela: scrape_history)
+            end
+            subgraph "Data Warehouse - Analytics"
+                 L[Schema 'analytics']
+            end
+            
+            H --> I & J & L
         end
 
-        subgraph sg_Transformacao ["Transformação (dbt)"]
-            direction TB
-            K; L;
+        subgraph "Transformação - dbt"
+            K(dbt run)
         end
 
-        subgraph sg_Consumo ["Consumo"]
-            direction TB
-            M;
+        subgraph "Visualização - Metabase"
+            M{Metabase UI}
         end
-    end 
+    end
 
-    %% === 3. Define Links ===
-    A --> B;    
-    C --> D;
-    B --> E;    
-    D --> E;
-    B --> F;
-    D --> F;
-    F --> G;    
-    G --> F;
-    E --> H;    
-    H --> I;    
-    H --> J;
-    B -- Descobre URLs --> I; 
-    D -- Lê URLs Ativas de --> I; 
-    F -- Passa URLs para --> B; 
-    F -- Passa Dados Mod. para --> D; 
-    B -- UPSERT --> I; 
-    D -- INSERT --> J; 
-    H -- Dados Brutos --> K; 
-    K -- Cria/Atualiza --> L; 
-    L -- Dados Limpos --> M; 
-
-    %% === 4. Define Styles ===
-    style A fill:#f9f,stroke:#333,stroke-width:1px, color: white
-    style C fill:#f9f,stroke:#333,stroke-width:1px, color: white
-    style G fill:#ccf,stroke:#333,stroke-width:1px, color: white
-    style H fill:#9cf,stroke:#333,stroke-width:1px, color: white
-    style I fill:#9cf,stroke:#333,stroke-width:1px, color: white
-    style J fill:#9cf,stroke:#333,stroke-width:1px, color: white
-    style K fill:#FFCC99,stroke:#333,stroke-width:1px, color: white
-    style L fill:#FFCC99,stroke:#333,stroke-width:1px, color: white
-    style M fill:#99FF99,stroke:#333,stroke-width:1px, color: white
+    %% === Links da Pipeline ===
+    worker -- "Executa" --> B
+    worker -- "Executa" --> D
+    B -- "UPSERT (Novas URLs)" --> I
+    D -- "INSERT (Histórico)" --> J
+    D -- "Aciona" --> K
+    K -- "Lê de" --> I
+    K -- "Lê de" --> J
+    K -- "Escreve em" --> L
+    M -- "Lê de" --> L
 ```
 
-## Como Clonar
+## 🧰 Tecnologias Utilizadas
+
+| **Categoria**     | **Ferramenta**               | **Propósito** |
+|--------------------|------------------------------|----------------|
+| **Orquestração**   | Apache Airflow               | Agendamento, execução e monitoramento das pipelines (DAGs). |
+| **Extração**       | Python & Selenium            | Scripts de crawling (descoberta) e scraping (coleta) de dados do site. |
+| **Armazenamento**  | PostgreSQL                   | Banco de dados relacional usado como *Staging Area* (dados brutos) e *Data Warehouse* (dados analíticos). |
+| **Transformação**  | dbt (*Data Build Tool*)      | Modelagem dos dados brutos em um *Data Warehouse* (*Star Schema*) via SQL. |
+| **Visualização**   | Metabase                     | Ferramenta de BI para criação e visualização de dashboards. |
+| **Ambiente**       | Docker & Docker Compose      | Containerização de todos os serviços (Airflow, Postgres, Metabase) para garantir portabilidade e isolamento. |
+
+## 🚀 Instalação & Deploy (Servidor Linux)
+
+Este projeto é projetado para rodar inteiramente com **Docker**.
+
+---
+
+1. Clonar o Repositório
 
 ```bash
 git clone https://github.com/luizobara-unesp/webcrawling.git
 cd webcrawling
 ```
 
-## Tecnologias Utilizadas
+---
 
-- Linguagem: Python
+2. Instalar o Docker
 
-## Bibliotecas:
+Siga o guia oficial de instalação do **Docker Engine** e do **Docker Compose** para seu servidor Linux.
 
-- Selenium: Para automação do navegador e extração de conteúdo.
+---
 
-- SQLAlchemy: Para interação com o banco de dados PostgreSQL.
+3. Adicionar Usuário ao Grupo Docker (Pós-instalação)
 
-- psycopg2-binary: Driver PostgreSQL para Python.
-
-- python-dotenv: Para gerenciamento de variáveis de ambiente.
-
-## Instalação
-
-Siga os passos abaixo para configurar o ambiente de desenvolvimento:
-
-1. Crie um ambiente virtual:
+Para rodar comandos Docker sem `sudo`:
 
 ```bash
-python -m venv .venv
+sudo usermod -aG docker $USER
 ```
-<br>
 
-2. Ative o ambiente virtual:
+> ⚠️ Você precisará sair e logar novamente no servidor para que esta permissão tenha efeito.
 
-- No Windows:
+---
+
+4. Configurar Variáveis de Ambiente
+
+Crie o arquivo `.env` a partir do exemplo. Este arquivo armazena todas as senhas e configurações:
 
 ```bash
-.venv\Scripts\activate
+cp .env.example .env
 ```
 
-- No macOS/Linux:
+Edite o `.env` (`nano .env`) e preencha as variáveis.  
+O `AIRFLOW_UID` é crucial para corrigir permissões de arquivo no Linux:
 
 ```bash
-source .venv/bin/activate
-```
-<br>
+# ID de usuário do Airflow (Corrige permissões de log no Linux)
+AIRFLOW_UID=50000
 
-3. Instale as dependências:
+# Configurações do Banco de Dados
+# (Usado pelo Airflow, Metabase, dbt e pelos scripts Python)
+DB_HOST=postgres
+DB_PORT=5432
+DB_USER=airflow
+DB_PASSWORD=airflow
+DB_NAME=airflow
+DB_SCHEMA=public
+```
+
+5. Subir o Ambiente
+
+O primeiro *up* deve usar o comando `--build` para construir a imagem Docker customizada (com Selenium, Chrome e dbt) definida no `Dockerfile`.
 
 ```bash
-pip install -r requirements.txt
+docker compose up -d --build
 ```
-<br>
 
-4. **Configure o ChromeDriver**: Baixe o [ChromeDriver](https://googlechromelabs.github.io/chrome-for-testing/) compatível com sua versão do Google Chrome, coloque-o na pasta `drivers` do projeto.
+---
+6. Resetar a Senha do Airflow (Segurança)
 
-<br>
-
-5. **Configuração das Variáveis de Ambiente**: Este projeto utiliza variáveis de ambiente para configurações essenciais, como a conexão com o banco de dados. Gerenciamos isso através de um arquivo `.env` na raiz do projeto.
-
-    - **Crie o arquivo `.env`:**
-    Copie o arquivo de exemplo `.env.example` para criar seu arquivo `.env` local:
-        ```bash
-        cp .env.example .env
-        ```
-
-    -  **Edite o arquivo `.env`:**
-        Abra o arquivo `.env` recém-criado com seu terminal e substitua os valores de placeholder (`<...>`) pelas suas configurações reais de desenvolvimento.
-
-        * **Conexão com Banco de Dados:** O script utiliza as variáveis `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD` e `DB_NAME` (carregadas via `python-dotenv`, no arquivo `db.py`) para se conectar ao PostgreSQL.
-
-        *Exemplo de conteúdo para o arquivo `.env`:*
-
-        ```dotenv
-        DATABASE_URL="postgresql://seu_usuario_dev:sua_senha_dev@localhost:5432/seu_banco_dev"
-
-        DB_HOST="localhost"                 
-        DB_PORT="5432"                     
-        DB_USER="seu_usuario_dev"          
-        DB_PASSWORD="sua_senha_dev"        
-        DB_NAME="seu_banco_dev"            
-        DB_SCHEMA="public"                
-        ```
-
-## Modo de Uso
-
-O projeto possui dois scripts principais que devem ser executados em ordem:
-
-1. `crawl.py` (Descoberta de Páginas): Execute este script para varrer o site e popular o banco de dados com todas as páginas encontradas.
+Após os contêineres estarem *Healthy* (verifique com `docker compose ps`), mude a senha padrão (`airflow/airflow`) por uma senha segura:
 
 ```bash
-python src/crawl.py
+docker compose exec airflow-scheduler airflow users reset-password --username airflow
 ```
 
-2. `main.py` (Extração de Dados): Após ter as páginas no banco, execute este script para extrair as informações de modificação de cada uma.
+---
 
-```bash
-python src/main.py
-```
+## ⚙️ Modo de Uso
 
-## Próximos Passos
+Após o deploy (`docker compose up`), a pipeline está **100% automatizada**.  
+O gerenciamento é feito pelas interfaces web:
 
-- [ ] Realizar uma forma de buscar/interagir com os dados diariamente.
-- [ ] Tratar os dados coletados.
-- [ ] Disponibilizar os dados em um dashboard ou tabela interativa para extração de insights sob demanda.
+---
 
-## Estrutura do Projeto
+### 🌀 Orquestração (Airflow)
+
+Acesse: `http://<ip-do-servidor>:8080`
+
+Monitore as DAGs:
+- `unesp_daily_collection`
+- `unesp_weekly_discovery`
+
+---
+
+### 📊 Visualização (Metabase)
+
+Acesse: `http://<ip-do-servidor>:3000`
+
+#### 🧭 Setup (Primeira vez)
+1. Crie sua conta de administrador.  
+2. Quando perguntado, conecte-se ao banco de dados com os mesmos dados do arquivo `.env`  
+   (Host: `postgres`, Usuário: `airflow`, etc.).  
+3. Crie seus **dashboards** lendo as tabelas do schema `analytics`.
+
+---
+
+## 🧱 Estrutura do Projeto
+
+A estrutura foi organizada para separar as responsabilidades da pipeline (**ELT**) e do ambiente.
 
 ```bash
 webcrawling/
-├── .env.example       # Exemplo de arquivo para variáveis de ambiente
-├── requirements.txt   # Lista de dependências Python
-├── drivers/           # Pasta para armazenar o executável do WebDriver (ex: chromedriver.exe)
-├── data/              # Armazena dados exportados (CSVs)
-└── src/
-    ├── crawl.py       # Script para descobrir e salvar as URLs do site
-    ├── db.py          # Configuração da conexão com o banco de dados
-    └── main.py        # Script principal para extrair dados das páginas
+├── airflow/
+│   ├── config/             # Configurações do Airflow (ex: airflow.cfg)
+│   ├── dags/               # Definições das DAGs (ex: dag_1_weekly_discovery.py)
+│   ├── logs/               # Logs gerados pelas tarefas do Airflow
+│   └── plugins/            # Plugins customizados do Airflow (vazio)
+│
+├── src/
+│   ├── crawl.py            # Script Python (E) para descoberta de novas páginas
+│   ├── main.py             # Script Python (E+L) para scraping diário dos dados
+│   └── db.py               # Configuração da conexão (SQLAlchemy)
+│
+├── unesp_analytics/        # Projeto dbt (T - Transformação)
+│   ├── models/
+│   │   ├── staging/        # Modelos de Staging (limpeza)
+│   │   ├── marts/          # Modelos do Data Warehouse (dimensões e fatos)
+│   │   └── analytics/      # Views finais para consumo
+│   ├── dbt_project.yml     # Configuração principal do projeto dbt
+│   └── profiles.yml        # Perfil de conexão do dbt (lê o .env)
+│
+├── .env                    # (Local) Chaves e senhas (ignorado pelo Git)
+├── .env.example            # Template das variáveis de ambiente
+├── docker-compose.yaml     # Orquestra todos os serviços (Postgres, Airflow, Metabase)
+└── Dockerfile              # Define a imagem customizada (Airflow + Chrome + dbt)
 ```
-
-- `src/crawl.py`: Responsável por navegar pelo site, descobrir todas as sub-páginas e registrá-las no banco de dados.
-
-- `src/db.py`: Módulo que centraliza a criação da `engine` do SQLAlchemy para conexão com o banco de dados PostgreSQL.
-
-- `src/main.py`: Script que lê as URLs do banco de dados, acessa cada uma para extrair (fazer o scrape) das informações de última modificação e salva esses dados em uma tabela de histórico.
-
-- `drivers/`: Pasta para armazenar o executável do WebDriver (ex: `chromedriver.exe`).
-
-- `data/`: Diretório usado para salvar arquivos de dados, como o histórico de scraping em formato `.csv`.
