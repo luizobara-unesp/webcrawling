@@ -9,9 +9,11 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException
 
 from db import engine
-from sqlalchemy import text, table, column, insert
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy import text, table, column
 
 FIXED_SLEEP_SECONDS = 2
+DB_UPSERT_BATCH_SIZE = 1000
 
 def setup_driver():
     """Inicializa e retorna uma instância do Selenium WebDriver (versão simplificada para Docker)."""
@@ -117,9 +119,10 @@ def get_last_modified_info(driver, url):
         print(f"  -> [ERRO] Falha em {url}: Erro inesperado: {e.__class__.__name__}")
         return None
             
-def save_history_to_db(history_records):
+def save_history_to_db_upsert(history_records):
     """
-    Salva os registros de scrape (lista de dicts) na tabela 'scrape_history'.
+    Salva os registros de scrape (lista de dicts) na tabela 'scrape_history'
+    usando a lógica de UPSERT.
     """
     if not history_records:
         print("No scrape history records to save.")
@@ -128,17 +131,44 @@ def save_history_to_db(history_records):
         print("Database engine not initialized. Exiting.")
         return
 
-    print(f"\nSaving {len(history_records)} history records to database...")
+    print(f"\nUpserting {len(history_records)} history records to database...")
+
     history_table = table("scrape_history",
         column("page_id"), column("scrape_timestamp"), column("modified_date"),
         column("updated_by"), column("responsible"), column("full_modified_text")
     )
-    try:
-        with engine.begin() as conn:
-            conn.execute(insert(history_table), history_records)
-        print(f"Successfully saved {len(history_records)} records to database.")
-    except Exception as e:
-        print(f"Error saving history to database: {e}")
+
+    total_processed = 0
+    for i in range(0, len(history_records), DB_UPSERT_BATCH_SIZE):
+        batch = history_records[i : i + DB_UPSERT_BATCH_SIZE]
+        batch_num = (i // DB_UPSERT_BATCH_SIZE) + 1
+        print(f"Upserting batch {batch_num} ({len(batch)} records)...")
+
+        try:
+            stmt = pg_insert(history_table).values(batch)
+            
+            stmt = stmt.on_conflict_do_update(
+                index_elements=['page_id'],
+                
+                set_={
+                    'scrape_timestamp': stmt.excluded.scrape_timestamp,
+                    'modified_date': stmt.excluded.modified_date,
+                    'updated_by': stmt.excluded.updated_by,
+                    'responsible': stmt.excluded.responsible,
+                    'full_modified_text': stmt.excluded.full_modified_text
+                }
+            )
+
+            with engine.begin() as conn:
+                result = conn.execute(stmt)
+            
+            total_processed += len(batch)
+
+        except Exception as e:
+            print(f"Error upserting batch {batch_num} to database: {e}")
+            print("!!! VERIFIQUE SE A COLUNA 'page_id' POSSUI UMA RESTRIÇÃO 'UNIQUE' NO BANCO DE DADOS. !!!")
+
+    print(f"Successfully executed upsert operations for {total_processed} records.")
 
 if __name__ == "__main__":
     pages_to_scrape = load_pages_from_db()
@@ -186,4 +216,4 @@ if __name__ == "__main__":
             if driver: 
                 driver.quit()
         
-        save_history_to_db(results)
+        save_history_to_db_upsert(results)
